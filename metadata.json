@@ -1,0 +1,6 @@
+{
+  "name": "FedEx Logistics",
+  "description": "Enterprise-grade real-time logistics tracking system with a FedEx-inspired interface.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
