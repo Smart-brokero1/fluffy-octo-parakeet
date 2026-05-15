@@ -1,4 +1,5 @@
 import express from "express";
+import { put, list } from "@vercel/blob";
 
 const app = express();
 
@@ -24,8 +25,8 @@ app.post("/api/admin/login", (req, res) => {
   }
 });
 
-// In-memory data store (resets on cold start!)
-let shipments = [
+// Default data
+const defaultShipments = [
   {
     id: "TRK-1001",
     customerName: "Alice Johnson",
@@ -42,13 +43,52 @@ let shipments = [
   }
 ];
 
+// In-memory fallback
+let memoryShipments = [...defaultShipments];
+
+// Helper to get shipments (from Blob if available, else memory)
+async function getShipments() {
+  try {
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      const { blobs } = await list({ prefix: 'shipments.json' });
+      if (blobs.length > 0) {
+        const response = await fetch(blobs[0].url);
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          return data as any[];
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Blob get error:", error);
+  }
+  return memoryShipments;
+}
+
+// Helper to save shipments
+async function saveShipments(shipments: any[]) {
+  memoryShipments = shipments;
+  try {
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      await put('shipments.json', JSON.stringify(shipments), {
+        access: 'public',
+        addRandomSuffix: false
+      });
+    }
+  } catch (error) {
+    console.error("Blob set error:", error);
+  }
+}
+
 // API Routes
-app.get("/api/shipments", adminAuth, (req, res) => {
+app.get("/api/shipments", adminAuth, async (req, res) => {
+  const shipments = await getShipments();
   res.json(shipments);
 });
 
-app.get("/api/track/:id", (req, res) => {
-  const shipment = shipments.find(s => s.id === req.params.id);
+app.get("/api/track/:id", async (req, res) => {
+  const shipments = await getShipments();
+  const shipment = shipments.find((s: any) => s.id === req.params.id);
   if (shipment) {
     res.json(shipment);
   } else {
@@ -56,7 +96,8 @@ app.get("/api/track/:id", (req, res) => {
   }
 });
 
-app.post("/api/shipments", adminAuth, (req, res) => {
+app.post("/api/shipments", adminAuth, async (req, res) => {
+  const shipments = await getShipments();
   const newShipment = {
     id: `TRK-${Math.floor(1000 + Math.random() * 9000)}`,
     ...req.body,
@@ -64,18 +105,21 @@ app.post("/api/shipments", adminAuth, (req, res) => {
     timeline: [{ status: "Order Processed", time: new Date().toLocaleString() }],
   };
   shipments.push(newShipment);
+  await saveShipments(shipments);
   res.json(newShipment);
 });
 
-app.patch("/api/track/:id", adminAuth, (req, res) => {
+app.patch("/api/track/:id", adminAuth, async (req, res) => {
+  const shipments = await getShipments();
   const { progress, status } = req.body;
-  const index = shipments.findIndex(s => s.id === req.params.id);
+  const index = shipments.findIndex((s: any) => s.id === req.params.id);
   if (index !== -1) {
     shipments[index] = { ...shipments[index], progress: progress ?? shipments[index].progress };
     if (status) {
       shipments[index].status = status;
       shipments[index].timeline.push({ status, time: new Date().toLocaleString() });
     }
+    await saveShipments(shipments);
     // Note: Vercel Serverless Functions don't support Socket.io, so this won't broadcast.
     res.json(shipments[index]);
   } else {

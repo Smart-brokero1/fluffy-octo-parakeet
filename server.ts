@@ -3,6 +3,7 @@ import path from "path";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { createServer as createViteServer } from "vite";
+import { put, list } from "@vercel/blob";
 
 async function startServer() {
   const app = express();
@@ -37,8 +38,8 @@ async function startServer() {
     }
   });
 
-  // In-memory data store
-  let shipments = [
+  // Default data
+  const defaultShipments = [
     {
       id: "TRK-1001",
       customerName: "Alice Johnson",
@@ -55,13 +56,52 @@ async function startServer() {
     }
   ];
 
+  // In-memory fallback
+  let memoryShipments = [...defaultShipments];
+
+  // Helper to get shipments
+  async function getShipments() {
+    try {
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const { blobs } = await list({ prefix: 'shipments.json' });
+        if (blobs.length > 0) {
+          const response = await fetch(blobs[0].url);
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            return data as any[];
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Blob get error:", error);
+    }
+    return memoryShipments;
+  }
+
+  // Helper to save shipments
+  async function saveShipments(shipments: any[]) {
+    memoryShipments = shipments;
+    try {
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        await put('shipments.json', JSON.stringify(shipments), {
+          access: 'public',
+          addRandomSuffix: false
+        });
+      }
+    } catch (error) {
+      console.error("Blob set error:", error);
+    }
+  }
+
   // API Routes
-  app.get("/api/shipments", adminAuth, (req, res) => {
+  app.get("/api/shipments", adminAuth, async (req, res) => {
+    const shipments = await getShipments();
     res.json(shipments);
   });
 
-  app.get("/api/track/:id", (req, res) => {
-    const shipment = shipments.find(s => s.id === req.params.id);
+  app.get("/api/track/:id", async (req, res) => {
+    const shipments = await getShipments();
+    const shipment = shipments.find((s: any) => s.id === req.params.id);
     if (shipment) {
       res.json(shipment);
     } else {
@@ -69,7 +109,8 @@ async function startServer() {
     }
   });
 
-  app.post("/api/shipments", adminAuth, (req, res) => {
+  app.post("/api/shipments", adminAuth, async (req, res) => {
+    const shipments = await getShipments();
     const newShipment = {
       id: `TRK-${Math.floor(1000 + Math.random() * 9000)}`,
       ...req.body,
@@ -77,18 +118,21 @@ async function startServer() {
       timeline: [{ status: "Order Processed", time: new Date().toLocaleString() }],
     };
     shipments.push(newShipment);
+    await saveShipments(shipments);
     res.json(newShipment);
   });
 
-  app.patch("/api/track/:id", adminAuth, (req, res) => {
+  app.patch("/api/track/:id", adminAuth, async (req, res) => {
+    const shipments = await getShipments();
     const { progress, status } = req.body;
-    const index = shipments.findIndex(s => s.id === req.params.id);
+    const index = shipments.findIndex((s: any) => s.id === req.params.id);
     if (index !== -1) {
       shipments[index] = { ...shipments[index], progress: progress ?? shipments[index].progress };
       if (status) {
         shipments[index].status = status;
         shipments[index].timeline.push({ status, time: new Date().toLocaleString() });
       }
+      await saveShipments(shipments);
       // Broadcast update via Socket.io
       io.emit(`shipment_update:${req.params.id}`, shipments[index]);
       res.json(shipments[index]);
