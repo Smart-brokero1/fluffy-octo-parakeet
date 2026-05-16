@@ -65,7 +65,7 @@ async function startServer() {
       if (process.env.BLOB_READ_WRITE_TOKEN) {
         const { blobs } = await list({ prefix: 'shipments.json' });
         if (blobs.length > 0) {
-          const response = await fetch(blobs[0].url);
+          const response = await fetch(`${blobs[0].url}?t=${Date.now()}`, { cache: 'no-store' });
           const data = await response.json();
           if (Array.isArray(data)) {
             return data as any[];
