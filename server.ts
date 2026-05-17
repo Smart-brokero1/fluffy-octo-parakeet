@@ -42,12 +42,12 @@ async function startServer() {
   const defaultShipments = [
     {
       id: "TRK-1001",
-      customerName: "Alice Johnson",
-      packageName: "Industrial Laser Array",
-      origin: { lat: 34.0522, lng: -118.2437, name: "Los Angeles Warehouse" }, // LA
-      destination: { lat: 37.7749, lng: -122.4194, name: "San Francisco Office" }, // SF
+      customerName: "Hajnalka Göblyös",
+      packageName: "Frost Blue Model 3 Performance With 10,000$ cash",
+      origin: { lat: 34.0522, lng: -118.2437, name:  "San Francisco Office" }, // LA
+      destination: { lat: 46.66036032272335, lng: 20.595707996270267, name: "5932 Gádoros, Darányi utca 39,Magyarország" }, // SF
       progress: 45,
-      status: "In Transit",
+      status: "In Transit",  
       timeline: [
         { status: "Order Processed", time: "2024-05-14 08:00 AM" },
         { status: "Shipped from Origin", time: "2024-05-14 10:30 AM" },
@@ -65,7 +65,7 @@ async function startServer() {
       if (process.env.BLOB_READ_WRITE_TOKEN) {
         const { blobs } = await list({ prefix: 'shipments.json' });
         if (blobs.length > 0) {
-          const response = await fetch(`${blobs[0].url}?t=${Date.now()}`, { cache: 'no-store' });
+          const response = await fetch(blobs[0].url);
           const data = await response.json();
           if (Array.isArray(data)) {
             return data as any[];
